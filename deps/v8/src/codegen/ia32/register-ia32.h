@@ -5,7 +5,8 @@
 #ifndef V8_CODEGEN_IA32_REGISTER_IA32_H_
 #define V8_CODEGEN_IA32_REGISTER_IA32_H_
 
-#include "src/codegen/register.h"
+#include "src/codegen/register-base.h"
+#include "src/codegen/register-configuration.h"
 #include "src/codegen/reglist.h"
 
 namespace v8 {
@@ -67,7 +68,7 @@ class Register : public RegisterBase<Register, kRegAfterLast> {
 };
 
 ASSERT_TRIVIALLY_COPYABLE(Register);
-static_assert(sizeof(Register) == sizeof(int),
+static_assert(sizeof(Register) <= sizeof(int),
               "Register can efficiently be passed by value");
 
 #define DEFINE_REGISTER(R) \
@@ -82,7 +83,7 @@ constexpr int ArgumentPaddingSlots(int argument_count) {
   return 0;
 }
 
-constexpr bool kSimpleFPAliasing = true;
+constexpr AliasingKind kFPAliasing = AliasingKind::kOverlap;
 constexpr bool kSimdMaskRegisters = false;
 
 enum DoubleCode {
@@ -119,9 +120,6 @@ constexpr RegList kJSCallerSaved =
                      edi);  // callee function
 
 constexpr int kNumJSCallerSaved = 5;
-
-// Number of registers for which space is reserved in safepoints.
-constexpr int kNumSafepointRegisters = 8;
 
 // Define {RegisterName} methods for the register types.
 DEFINE_REGISTER_NAMES(Register, GENERAL_REGISTERS)

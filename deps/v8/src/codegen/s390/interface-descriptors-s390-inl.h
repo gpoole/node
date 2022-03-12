@@ -64,6 +64,36 @@ constexpr Register LoadDescriptor::SlotRegister() { return r2; }
 constexpr Register LoadWithVectorDescriptor::VectorRegister() { return r5; }
 
 // static
+constexpr Register KeyedLoadBaselineDescriptor::ReceiverRegister() {
+  return r3;
+}
+// static
+constexpr Register KeyedLoadBaselineDescriptor::NameRegister() {
+  return kInterpreterAccumulatorRegister;
+}
+// static
+constexpr Register KeyedLoadBaselineDescriptor::SlotRegister() { return r4; }
+
+// static
+constexpr Register KeyedLoadWithVectorDescriptor::VectorRegister() {
+  return r5;
+}
+
+// static
+constexpr Register KeyedHasICBaselineDescriptor::ReceiverRegister() {
+  return kInterpreterAccumulatorRegister;
+}
+// static
+constexpr Register KeyedHasICBaselineDescriptor::NameRegister() { return r3; }
+// static
+constexpr Register KeyedHasICBaselineDescriptor::SlotRegister() { return r4; }
+
+// static
+constexpr Register KeyedHasICWithVectorDescriptor::VectorRegister() {
+  return r5;
+}
+
+// static
 constexpr Register
 LoadWithReceiverAndVectorDescriptor::LookupStartObjectRegister() {
   return r6;
@@ -110,13 +140,29 @@ constexpr Register BaselineLeaveFrameDescriptor::WeightRegister() {
 constexpr Register TypeConversionDescriptor::ArgumentRegister() { return r2; }
 
 // static
-constexpr auto TypeofDescriptor::registers() { return RegisterArray(r5); }
+constexpr auto TypeofDescriptor::registers() { return RegisterArray(r2); }
 
 // static
 constexpr auto CallTrampolineDescriptor::registers() {
   // r2 : number of arguments
   // r3 : the target to call
   return RegisterArray(r3, r2);
+}
+
+// static
+constexpr auto CopyDataPropertiesWithExcludedPropertiesDescriptor::registers() {
+  // r3 : the source
+  // r2 : the excluded property count
+  return RegisterArray(r3, r2);
+}
+
+// static
+constexpr auto
+CopyDataPropertiesWithExcludedPropertiesOnStackDescriptor::registers() {
+  // r3 : the source
+  // r2 : the excluded property count
+  // r4 : the excluded property base
+  return RegisterArray(r3, r2, r4);
 }
 
 // static
@@ -220,6 +266,11 @@ constexpr auto BinaryOpDescriptor::registers() { return RegisterArray(r3, r2); }
 // static
 constexpr auto BinaryOp_BaselineDescriptor::registers() {
   return RegisterArray(r3, r2, r4);
+}
+
+// static
+constexpr auto BinarySmiOp_BaselineDescriptor::registers() {
+  return RegisterArray(r2, r3, r4);
 }
 
 // static

@@ -9,7 +9,7 @@
 #include "src/base/flags.h"
 #include "src/codegen/interface-descriptors.h"
 #include "src/codegen/machine-type.h"
-#include "src/codegen/register-arch.h"
+#include "src/codegen/register.h"
 #include "src/codegen/reglist.h"
 #include "src/codegen/signature.h"
 #include "src/common/globals.h"
@@ -310,6 +310,7 @@ class V8_EXPORT_PRIVATE CallDescriptor final
 #if V8_ENABLE_WEBASSEMBLY
     if (IsWasmFunctionCall()) return true;
 #endif  // V8_ENABLE_WEBASSEMBLY
+    if (CalleeSavedRegisters() != kNoCalleeSaved) return true;
     return false;
   }
 

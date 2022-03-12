@@ -288,8 +288,10 @@ class OutOfLineRecordWrite final : public OutOfLineCode {
     __ leaq(scratch1_, operand_);
 
     RememberedSetAction const remembered_set_action =
-        mode_ > RecordWriteMode::kValueIsMap ? RememberedSetAction::kEmit
-                                             : RememberedSetAction::kOmit;
+        mode_ > RecordWriteMode::kValueIsMap ||
+                FLAG_use_full_record_write_builtin
+            ? RememberedSetAction::kEmit
+            : RememberedSetAction::kOmit;
     SaveFPRegsMode const save_fp_mode = frame()->DidAllocateDoubleRegisters()
                                             ? SaveFPRegsMode::kSave
                                             : SaveFPRegsMode::kIgnore;
@@ -344,8 +346,8 @@ void EmitStore(TurboAssembler* tasm, Operand operand, Register value,
       case MachineRepresentation::kTagged:
         tasm->StoreTaggedField(operand, value);
         break;
-      case MachineRepresentation::kCagedPointer:
-        tasm->StoreCagedPointerField(operand, value);
+      case MachineRepresentation::kSandboxedPointer:
+        tasm->StoreSandboxedPointerField(operand, value);
         break;
       default:
         UNREACHABLE();
@@ -514,11 +516,11 @@ template <std::memory_order order>
 Register GetTSANValueRegister(TurboAssembler* tasm, Register value,
                               X64OperandConverter& i,
                               MachineRepresentation rep) {
-  if (rep == MachineRepresentation::kCagedPointer) {
-    // CagedPointers need to be encoded.
+  if (rep == MachineRepresentation::kSandboxedPointer) {
+    // SandboxedPointers need to be encoded.
     Register value_reg = i.TempRegister(1);
     tasm->movq(value_reg, value);
-    tasm->EncodeCagedPointer(value_reg);
+    tasm->EncodeSandboxedPointer(value_reg);
     return value_reg;
   }
   return value;
@@ -535,9 +537,9 @@ Register GetTSANValueRegister<std::memory_order_relaxed>(
     MachineRepresentation rep) {
   Register value_reg = i.TempRegister(1);
   tasm->movq(value_reg, value);
-  if (rep == MachineRepresentation::kCagedPointer) {
-    // CagedPointers need to be encoded.
-    tasm->EncodeCagedPointer(value_reg);
+  if (rep == MachineRepresentation::kSandboxedPointer) {
+    // SandboxedPointers need to be encoded.
+    tasm->EncodeSandboxedPointer(value_reg);
   }
   return value_reg;
 }
@@ -1173,16 +1175,41 @@ void CodeGenerator::BailoutIfDeoptimized() {
           RelocInfo::CODE_TARGET, not_zero);
 }
 
+bool ShouldClearOutputRegisterBeforeInstruction(CodeGenerator* g,
+                                                Instruction* instr) {
+  X64OperandConverter i(g, instr);
+  FlagsMode mode = FlagsModeField::decode(instr->opcode());
+  if (mode == kFlags_set) {
+    FlagsCondition condition = FlagsConditionField::decode(instr->opcode());
+    if (condition != kUnorderedEqual && condition != kUnorderedNotEqual) {
+      Register reg = i.OutputRegister(instr->OutputCount() - 1);
+      // Do not clear output register when it is also input register.
+      for (size_t index = 0; index < instr->InputCount(); ++index) {
+        if (HasRegisterInput(instr, index) && reg == i.InputRegister(index))
+          return false;
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
 // Assembles an instruction after register allocation, producing machine code.
 CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     Instruction* instr) {
   X64OperandConverter i(this, instr);
   InstructionCode opcode = instr->opcode();
   ArchOpcode arch_opcode = ArchOpcodeField::decode(opcode);
+  if (ShouldClearOutputRegisterBeforeInstruction(this, instr)) {
+    // Transform setcc + movzxbl into xorl + setcc to avoid register stall and
+    // encode one byte shorter.
+    Register reg = i.OutputRegister(instr->OutputCount() - 1);
+    __ xorl(reg, reg);
+  }
   switch (arch_opcode) {
     case kArchCallCodeObject: {
       if (HasImmediateInput(instr, 0)) {
-        Handle<Code> code = i.InputCode(0);
+        Handle<CodeT> code = i.InputCode(0);
         __ Call(code, RelocInfo::CODE_TARGET);
       } else {
         Register reg = i.InputRegister(0);
@@ -1242,7 +1269,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
 #endif  // V8_ENABLE_WEBASSEMBLY
     case kArchTailCallCodeObject: {
       if (HasImmediateInput(instr, 0)) {
-        Handle<Code> code = i.InputCode(0);
+        Handle<CodeT> code = i.InputCode(0);
         __ Jump(code, RelocInfo::CODE_TARGET);
       } else {
         Register reg = i.InputRegister(0);
@@ -1384,7 +1411,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
         // We don't actually want to generate a pile of code for this, so just
         // claim there is a stack frame, without generating one.
         FrameScope scope(tasm(), StackFrame::NO_FRAME_TYPE);
-        __ Call(isolate()->builtins()->code_handle(Builtin::kAbortCSADcheck),
+        __ Call(BUILTIN_CODE(isolate(), AbortCSADcheck),
                 RelocInfo::CODE_TARGET);
       }
       __ int3();
@@ -2386,18 +2413,18 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       }
       break;
     }
-    case kX64MovqDecodeCagedPointer: {
+    case kX64MovqDecodeSandboxedPointer: {
       CHECK(instr->HasOutput());
       Operand address(i.MemoryOperand());
       Register dst = i.OutputRegister();
       __ movq(dst, address);
-      __ DecodeCagedPointer(dst);
+      __ DecodeSandboxedPointer(dst);
       EmitTSANRelaxedLoadOOLIfNeeded(zone(), this, tasm(), address, i,
                                      DetermineStubCallMode(),
                                      kSystemPointerSize);
       break;
     }
-    case kX64MovqEncodeCagedPointer: {
+    case kX64MovqEncodeSandboxedPointer: {
       CHECK(!instr->HasOutput());
       size_t index = 0;
       Operand operand = i.MemoryOperand(&index);
@@ -2405,7 +2432,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       Register value(i.InputRegister(index));
       EmitTSANAwareStore<std::memory_order_relaxed>(
           zone(), this, tasm(), operand, value, i, DetermineStubCallMode(),
-          MachineRepresentation::kCagedPointer);
+          MachineRepresentation::kSandboxedPointer);
       break;
     }
     case kX64Movq:
@@ -4428,8 +4455,9 @@ void CodeGenerator::AssembleArchDeoptBranch(Instruction* instr,
   }
 }
 
-void CodeGenerator::AssembleArchJump(RpoNumber target) {
-  if (!IsNextInAssemblyOrder(target)) __ jmp(GetLabel(target));
+void CodeGenerator::AssembleArchJumpRegardlessOfAssemblyOrder(
+    RpoNumber target) {
+  __ jmp(GetLabel(target));
 }
 
 #if V8_ENABLE_WEBASSEMBLY
@@ -4470,7 +4498,9 @@ void CodeGenerator::AssembleArchBoolean(Instruction* instr,
   }
   __ bind(&check);
   __ setcc(FlagsConditionToCondition(condition), reg);
-  __ movzxbl(reg, reg);
+  if (!ShouldClearOutputRegisterBeforeInstruction(this, instr)) {
+    __ movzxbl(reg, reg);
+  }
   __ bind(&done);
 }
 
@@ -4785,19 +4815,12 @@ void CodeGenerator::AssembleReturn(InstructionOperand* additional_pop_count) {
     DCHECK_NE(argc_reg, scratch_reg);
     DCHECK_EQ(0u, call_descriptor->CalleeSavedRegisters() & scratch_reg.bit());
     DCHECK_EQ(0u, call_descriptor->CalleeSavedRegisters() & argc_reg.bit());
-    if (kJSArgcIncludesReceiver) {
-      __ cmpq(argc_reg, Immediate(parameter_slots));
-    } else {
-      int parameter_slots_without_receiver = parameter_slots - 1;
-      __ cmpq(argc_reg, Immediate(parameter_slots_without_receiver));
-    }
+    __ cmpq(argc_reg, Immediate(parameter_slots));
     __ j(greater, &mismatch_return, Label::kNear);
     __ Ret(parameter_slots * kSystemPointerSize, scratch_reg);
     __ bind(&mismatch_return);
     __ DropArguments(argc_reg, scratch_reg, TurboAssembler::kCountIsInteger,
-                     kJSArgcIncludesReceiver
-                         ? TurboAssembler::kCountIncludesReceiver
-                         : TurboAssembler::kCountExcludesReceiver);
+                     TurboAssembler::kCountIncludesReceiver);
     // We use a return instead of a jump for better return address prediction.
     __ Ret();
   } else if (additional_pop_count->IsImmediate()) {

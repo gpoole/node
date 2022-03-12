@@ -5,7 +5,8 @@
 #ifndef V8_CODEGEN_ARM_REGISTER_ARM_H_
 #define V8_CODEGEN_ARM_REGISTER_ARM_H_
 
-#include "src/codegen/register.h"
+#include "src/codegen/register-base.h"
+#include "src/codegen/register-configuration.h"
 #include "src/codegen/reglist.h"
 
 namespace v8 {
@@ -109,7 +110,7 @@ class Register : public RegisterBase<Register, kRegAfterLast> {
 };
 
 ASSERT_TRIVIALLY_COPYABLE(Register);
-static_assert(sizeof(Register) == sizeof(int),
+static_assert(sizeof(Register) <= sizeof(int),
               "Register can efficiently be passed by value");
 
 // r7: context register
@@ -125,7 +126,7 @@ constexpr int ArgumentPaddingSlots(int argument_count) {
   return 0;
 }
 
-constexpr bool kSimpleFPAliasing = false;
+constexpr AliasingKind kFPAliasing = AliasingKind::kCombine;
 constexpr bool kSimdMaskRegisters = false;
 
 enum SwVfpRegisterCode {
@@ -169,7 +170,7 @@ class SwVfpRegister : public RegisterBase<SwVfpRegister, kSwVfpAfterLast> {
 };
 
 ASSERT_TRIVIALLY_COPYABLE(SwVfpRegister);
-static_assert(sizeof(SwVfpRegister) == sizeof(int),
+static_assert(sizeof(SwVfpRegister) <= sizeof(int),
               "SwVfpRegister can efficiently be passed by value");
 
 using FloatRegister = SwVfpRegister;
@@ -210,7 +211,7 @@ class DwVfpRegister : public RegisterBase<DwVfpRegister, kDoubleAfterLast> {
 };
 
 ASSERT_TRIVIALLY_COPYABLE(DwVfpRegister);
-static_assert(sizeof(DwVfpRegister) == sizeof(int),
+static_assert(sizeof(DwVfpRegister) <= sizeof(int),
               "DwVfpRegister can efficiently be passed by value");
 
 using DoubleRegister = DwVfpRegister;

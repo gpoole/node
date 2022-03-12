@@ -6,7 +6,8 @@
 #define V8_CODEGEN_ARM64_REGISTER_ARM64_H_
 
 #include "src/codegen/arm64/utils-arm64.h"
-#include "src/codegen/register.h"
+#include "src/codegen/register-base.h"
+#include "src/codegen/register-configuration.h"
 #include "src/codegen/reglist.h"
 #include "src/common/globals.h"
 
@@ -95,7 +96,7 @@ enum RegisterCode {
 
 class CPURegister : public RegisterBase<CPURegister, kRegAfterLast> {
  public:
-  enum RegisterType { kRegister, kVRegister, kNoRegister };
+  enum RegisterType : int8_t { kRegister, kVRegister, kNoRegister };
 
   static constexpr CPURegister no_reg() {
     return CPURegister{kCode_no_reg, 0, kNoRegister};
@@ -188,7 +189,7 @@ class CPURegister : public RegisterBase<CPURegister, kRegAfterLast> {
   bool IsSameSizeAndType(const CPURegister& other) const;
 
  protected:
-  int reg_size_;
+  uint8_t reg_size_;
   RegisterType reg_type_;
 
 #if defined(V8_OS_WIN) && !defined(__clang__)
@@ -224,6 +225,8 @@ class CPURegister : public RegisterBase<CPURegister, kRegAfterLast> {
 };
 
 ASSERT_TRIVIALLY_COPYABLE(CPURegister);
+static_assert(sizeof(CPURegister) <= sizeof(int),
+              "CPURegister can efficiently be passed by value");
 
 class Register : public CPURegister {
  public:
@@ -241,6 +244,19 @@ class Register : public CPURegister {
     return Register::Create(code, kXRegSizeInBits);
   }
 
+  // Copied from RegisterBase since there's no CPURegister::from_code.
+  static constexpr Register FirstOf(RegList list) {
+    DCHECK_NE(kEmptyRegList, list);
+    return from_code(base::bits::CountTrailingZerosNonZero(list));
+  }
+
+  static constexpr Register TakeFirst(RegList* list) {
+    RegList value = *list;
+    Register result = FirstOf(value);
+    result.RemoveFrom(list);
+    return result;
+  }
+
   static const char* GetSpecialRegisterName(int code) {
     return (code == kSPRegInternalCode) ? "sp" : "UNKNOWN";
   }
@@ -250,6 +266,8 @@ class Register : public CPURegister {
 };
 
 ASSERT_TRIVIALLY_COPYABLE(Register);
+static_assert(sizeof(Register) <= sizeof(int),
+              "Register can efficiently be passed by value");
 
 // Stack frame alignment and padding.
 constexpr int ArgumentPaddingSlots(int argument_count) {
@@ -259,7 +277,7 @@ constexpr int ArgumentPaddingSlots(int argument_count) {
   return argument_count & alignment_mask;
 }
 
-constexpr bool kSimpleFPAliasing = true;
+constexpr AliasingKind kFPAliasing = AliasingKind::kOverlap;
 constexpr bool kSimdMaskRegisters = false;
 
 enum DoubleRegisterCode {
@@ -419,7 +437,7 @@ class VRegister : public CPURegister {
   }
 
  private:
-  int lane_count_;
+  int8_t lane_count_;
 
   constexpr explicit VRegister(const CPURegister& r, int lane_count)
       : CPURegister(r), lane_count_(lane_count) {}
@@ -430,6 +448,8 @@ class VRegister : public CPURegister {
 };
 
 ASSERT_TRIVIALLY_COPYABLE(VRegister);
+static_assert(sizeof(VRegister) <= sizeof(int),
+              "VRegister can efficiently be passed by value");
 
 // No*Reg is used to indicate an unused argument, or an error case. Note that
 // these all compare equal. The Register and VRegister variants are provided for
@@ -547,8 +567,6 @@ using Simd128Register = VRegister;
 // Lists of registers.
 class V8_EXPORT_PRIVATE CPURegList {
  public:
-  CPURegList() = default;
-
   template <typename... CPURegisters>
   explicit CPURegList(CPURegister reg0, CPURegisters... regs)
       : list_(CPURegister::ListOf(reg0, regs...)),

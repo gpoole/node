@@ -5,7 +5,8 @@
 #ifndef V8_CODEGEN_RISCV64_REGISTER_RISCV64_H_
 #define V8_CODEGEN_RISCV64_REGISTER_RISCV64_H_
 
-#include "src/codegen/register.h"
+#include "src/codegen/register-base.h"
+#include "src/codegen/register-configuration.h"
 #include "src/codegen/reglist.h"
 #include "src/codegen/riscv64/constants-riscv64.h"
 
@@ -55,10 +56,11 @@ namespace internal {
   V(v16) V(v17) V(v18) V(v19) V(v20) V(v21) V(v22) V(v23) \
   V(v24) V(v25) V(v26) V(v27) V(v28) V(v29) V(v30) V(v31)
 
-#define UNALLOACTABLE_VECTOR_REGISTERS(V)                 \
-  V(v9)  V(v10) V(v11) V(v12) V(v13) V(v14) V(v15)        \
-  V(v18) V(v19) V(v20) V(v21) V(v22) V(v23)               \
-  V(v24) V(v25)
+#define ALLOCATABLE_SIMD128_REGISTERS(V)            \
+  V(v1)  V(v2)  V(v3)  V(v4)  V(v5)  V(v6)  V(v7)   \
+  V(v10) V(v11) V(v12) V(v13) V(v14) V(v15) V(v16)  \
+  V(v17) V(v18) V(v19) V(v20) V(v21) V(v22) V(v26)  \
+  V(v27) V(v28) V(v29) V(v30) V(v31)
 
 #define ALLOCATABLE_DOUBLE_REGISTERS(V)                              \
   V(ft1)  V(ft2) V(ft3) V(ft4)  V(ft5) V(ft6) V(ft7) V(ft8)          \
@@ -121,7 +123,7 @@ const RegList kCalleeSavedFPU = 1 << 8 |   // fs0
                                 1 << 26 |  // fs10
                                 1 << 27;   // fs11
 
-const int kNumCalleeSavedFPU = 12;
+const int kNumCalleeSavedFPU = NumRegs(kCalleeSavedFPU);
 
 const RegList kCallerSavedFPU = 1 << 0 |   // ft0
                                 1 << 1 |   // ft1
@@ -143,6 +145,8 @@ const RegList kCallerSavedFPU = 1 << 0 |   // ft0
                                 1 << 29 |  // ft9
                                 1 << 30 |  // ft10
                                 1 << 31;   // ft11
+
+const int kNumCallerSavedFPU = NumRegs(kCallerSavedFPU);
 
 // Number of registers for which space is reserved in safepoints. Must be a
 // multiple of 8.
@@ -251,7 +255,7 @@ int ToNumber(Register reg);
 Register ToRegister(int num);
 
 constexpr bool kPadArguments = false;
-constexpr bool kSimpleFPAliasing = true;
+constexpr AliasingKind kFPAliasing = AliasingKind::kIndependent;
 constexpr bool kSimdMaskRegisters = false;
 
 enum DoubleRegisterCode {
@@ -296,12 +300,7 @@ class FPURegister : public RegisterBase<FPURegister, kDoubleAfterLast> {
   // this cl, in order to facilitate modification, it is assumed that the vector
   // register and floating point register are shared.
   VRegister toV() const {
-    DCHECK(base::IsInRange(code(), 0, kVRAfterLast - 1));
-    // FIXME(riscv): Because V0 is a special mask reg, so can't allocate it.
-    // And v8 is unallocated so we replace v0 with v8
-    if (code() == 0) {
-      return VRegister(8);
-    }
+    DCHECK(base::IsInRange(static_cast<int>(code()), 0, kVRAfterLast - 1));
     return VRegister(code());
   }
 
@@ -379,8 +378,8 @@ constexpr Register kWasmInstanceRegister = a0;
 constexpr Register kWasmCompileLazyFuncIndexRegister = t0;
 
 constexpr DoubleRegister kFPReturnRegister0 = fa0;
-constexpr VRegister kSimd128ScratchReg = v26;
-constexpr VRegister kSimd128ScratchReg2 = v27;
+constexpr VRegister kSimd128ScratchReg = v24;
+constexpr VRegister kSimd128ScratchReg2 = v23;
 constexpr VRegister kSimd128ScratchReg3 = v8;
 constexpr VRegister kSimd128RegZero = v25;
 
